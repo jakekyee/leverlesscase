@@ -1,0 +1,306 @@
+// ArtCase: case, switch plate and push-pin pegs for a leverless controller.
+//
+// Rebuilt from ArtCase-case.step, ArtCase-plate.step and ArtCase-peg.step.
+// X and Y follow the STEP files: the origin is the PCB's front-left corner and
+// +Y runs toward the open back edge. Z = 0 is the bottom of the case.
+// The STEP parts have 0.4 mm cosmetic fillets on most edges. Those are left
+// out; every other dimension follows the STEP files.
+//
+// Check from the repo root (see ../openscad-stuff/README.md):
+//   python ../openscad-stuff/scadloop.py scad/artcase.scad -D part=\"case\"
+//   python ../openscad-stuff/scadloop.py scad/artcase.scad -D part=\"interference\" --expect-empty
+//   python ../openscad-stuff/scadloop.py scad/artcase.scad -D part=\"assembly\" --preview
+// The plate and pegs fit line-to-line, as in the STEP files (plate_fit and
+// peg_fit are 0). The parts touch, so the merged assembly mesh has seams where
+// they meet and fails the watertight check; that is expected. The interference
+// check is the real fit test.
+
+/* [Selection] */
+part = "case";  // [case, plate, peg, assembly, interference]
+
+/* [PCB] */
+pcb_size = [211, 125];  // footprint; the case and plate are flush with its back edge
+pcb_corner_r = 4.5;     // corner radius at the front
+pcb_clear = 0.5;        // gap around the PCB in its pocket
+pcb_pocket_d = 1.8;     // pocket depth, from the floor up to the plate ledge
+
+/* [Plate] */
+plate_t = 2;
+plate_margin = 16.4;    // overhang past the PCB at the left, right and front
+switch_hole = 14;       // square switch cutout
+plate_slot_w = 3;       // width of the two slots above the ends of the floor notch
+plate_fit = 0;          // gap per side between plate and case (0 = as designed)
+
+/* [Case] */
+wall = 4;               // wall thickness around the plate
+floor_t = 6;            // floor thickness under the PCB
+rim_h = 4.6;            // wall height above the plate
+outer_r = 3.6;          // radius of the outer corners and top edges
+pocket_d = 2.4;         // depth of the clearance pockets under the PCB
+peg_boss_d = 10;        // floor pockets stay out of this circle around each peg hole
+min_floor = 1;          // thinnest floor allowed under a pocket
+
+/* [Pegs] */
+peg_d = 8;              // shaft diameter
+peg_fit = 0;            // hole clearance per side (0 = as designed)
+peg_flange_d = 10;
+peg_flange_t = 0.6;
+peg_flat_w = 6.4;       // width across the flats
+peg_barb_d = 10.4;      // barb diameter; both barb flanks are 45 degrees
+peg_barb_land = 0.2;    // straight band at the barb's widest point
+peg_split_z = 3;        // height where the flats and the slit reach full depth
+peg_slit_w = 3;         // slit width at the tip
+peg_slit_angle = 7;     // angle of each slit wall from vertical, degrees
+
+/* [Hidden] */
+$fn = $preview ? 32 : 96;
+over = 1;               // cutters run this far past the faces they open
+open_back = pcb_size.y + over;  // y for cuts that run out through the open back
+
+// Switch positions [x, y, d], where d is the diameter of the round floor pocket
+// under the switch.
+buttons = [
+    [ 12,  81,      24], [ 39,  89,      24], [ 66,  85,      24], [ 90,  68,      24],
+    [104,  15,      30], [133,  32,      24],
+    [118,  58,      24], [145,  67.9626, 24], [172,  67.9626, 24], [199,  59.9626, 24],
+    [118,  85,      24], [145,  94.9626, 24], [172,  94.9626, 24], [199,  86.9626, 24]
+];
+// Function-row switches; one rectangular floor pocket clears all four.
+function_keys = [[12, 116], [30, 116], [48, 116], [66, 116]];
+peg_holes = [[9, 7], [202, 7], [83, 118], [128, 118]];
+
+// Rectangular floor pockets [[x0, y0], [x1, y1], depth].
+pockets = [
+    [[  3,   109], [ 75,   open_back], pocket_d],  // under the function row
+    [[ 83,    88], [103,   118      ], pocket_d],  // component clearance (these two
+    [[103,   100], [115,   118      ], pocket_d],  //   rectangles make one L shape)
+    [[138,   115], [151,   open_back], pocket_d],  // component clearance
+    [[101,   116], [110,   open_back], 3.4],       // connector channel
+    [[157.5, 109], [164.5, open_back], 5],         // channels out the back
+    [[170.5, 109], [177.5, open_back], 5],
+    [[183.5, 109], [190.5, open_back], 5]
+];
+// Cut through the floor. The plate's two slots sit above its ends.
+notch = [[195, 114.6], [211, open_back]];
+
+// ---- Derived dimensions
+switches = concat(buttons, function_keys);  // every switch cutout in the plate
+plate_min = [-plate_margin, -plate_margin];
+plate_max = [pcb_size.x + plate_margin, pcb_size.y];
+// Recess in the case that the plate sits in.
+seat_min = plate_min - [plate_fit, plate_fit];
+seat_max = [plate_max.x + plate_fit, pcb_size.y];
+case_min = seat_min - [wall, wall];
+case_max = [seat_max.x + wall, pcb_size.y];
+plate_z = floor_t + pcb_pocket_d;  // the plate rests on the ledge here
+case_h = plate_z + plate_t + rim_h;
+
+// An installed peg has its tip flush with the case bottom and its flange on
+// the rim plane. Its barb seats in a 45 degree countersink as deep as the barb.
+peg_hole_d = peg_d + 2 * peg_fit;
+peg_len = case_h + peg_flange_t;
+barb_flank = (peg_barb_d - peg_d) / 2;  // 45 degree flank: height equals radial step
+barb_len = 2 * barb_flank + peg_barb_land;
+csink_h = barb_len;
+csink_d = peg_hole_d + 2 * csink_h;     // countersink diameter at the bottom face
+
+// Slit width at height z: peg_slit_w at the tip, narrowing by peg_slit_angle per side.
+function slit_w(z) = peg_slit_w - 2 * (peg_len - z) * tan(peg_slit_angle);
+slit_w0 = slit_w(peg_split_z);                               // at the slit's root
+slit_w_barb = slit_w(peg_len - barb_flank - peg_barb_land);  // where the barb is widest
+
+// ---- Design rules
+function inside(p, lo, hi) = p.x >= lo.x && p.y >= lo.y && p.x <= hi.x && p.y <= hi.y;
+
+assert(outer_r > 0 && outer_r <= wall, "outer_r must fit within the wall");
+assert(plate_margin > pcb_clear, "the plate must overhang the PCB pocket to rest on the ledge");
+assert(plate_fit >= 0 && peg_fit >= 0, "fits are clearances and can't be negative");
+assert(floor_t - max([pocket_d, for (p = pockets) p[2]]) >= min_floor,
+       "a floor pocket leaves less than min_floor");
+assert(csink_h < floor_t, "peg countersink is deeper than the floor");
+assert(slit_w0 >= 0, "peg slit closes up before reaching peg_split_z");
+assert(peg_split_z - (peg_d - peg_flat_w) / 2 >= peg_flange_t, "peg flats run into the flange");
+assert(slit_w_barb >= peg_barb_d - peg_hole_d, "peg barb can't squeeze through its hole");
+for (k = switches)
+    assert(inside(k, plate_min + [1, 1] * switch_hole / 2, plate_max - [1, 1] * switch_hole / 2),
+           str("switch at ", k, " is off the plate"));
+for (b = buttons)
+    assert(inside(b, [-pcb_clear, -pcb_clear] + [1, 1] * b[2] / 2,
+                  pcb_size + [pcb_clear, pcb_clear] - [1, 1] * b[2] / 2),
+           str("floor pocket at ", b, " is outside the PCB pocket"));
+
+echo(str("case ", case_max - case_min, " x ", case_h, " mm; plate ", plate_max - plate_min,
+         " x ", plate_t, " mm at z=", plate_z, "; ", len(switches), " switches"));
+echo(str("peg ", peg_len, " mm long; countersink ", csink_d, " mm x ", csink_h,
+         " deep; slit ", slit_w0, " to ", peg_slit_w, " mm"));
+
+// ---- Case
+
+module case() {
+    difference() {
+        case_shell();
+        // plate seat, open at the top and back
+        translate([seat_min.x, seat_min.y, plate_z])
+            cube([seat_max.x - seat_min.x, open_back - seat_min.y, plate_t + rim_h + over]);
+        translate([0, 0, floor_t]) linear_extrude(pcb_pocket_d + over) pcb_pocket_2d();
+        floor_pockets();
+        translate([notch[0].x, notch[0].y, -over])
+            cube([notch[1].x - notch[0].x, notch[1].y - notch[0].y, floor_t + 2 * over]);
+        for (h = peg_holes) translate(h) peg_hole();
+    }
+}
+
+// Outer shell: the hull of two domed front-corner posts and two side rails.
+// A rail is the wall's edge profile run from the front corner to the back,
+// trimmed in plan so its back corner is rounded. The result has rounded top
+// edges on the front and sides, spherical front corners, and a square back
+// edge where the side rounding meets the rounded back corner in a mitre.
+module case_shell() {
+    r = outer_r;
+    run = (case_max.y - r) - (case_min.y + r);  // front corner centre to back corner centre
+    hull() for (x = [case_min.x + r, case_max.x - r])
+        translate([x, case_min.y + r, 0]) {
+            rotate_extrude() edge_profile();
+            intersection() {
+                // profile stood upright and run toward +Y, past the back
+                mirror([0, 1, 0]) rotate([90, 0, 0]) linear_extrude(run + r + over) {
+                    edge_profile();
+                    mirror([1, 0]) edge_profile();
+                }
+                // plan trim that rounds the back corner
+                linear_extrude(case_h) hull() {
+                    translate([-r, 0]) square([2 * r, run]);
+                    translate([0, run]) circle(r = r);
+                }
+            }
+        }
+}
+
+// Outer wall profile: [0, outer_r] x [0, case_h] with the top outer corner rounded.
+module edge_profile() {
+    square([outer_r, case_h - outer_r]);
+    translate([0, case_h - outer_r]) intersection() {
+        circle(r = outer_r);
+        square(outer_r);
+    }
+}
+
+// PCB outline plus clearance: rounded at the front, running out through the back.
+module pcb_pocket_2d() {
+    hull() {
+        for (x = [pcb_corner_r, pcb_size.x - pcb_corner_r])
+            translate([x, pcb_corner_r]) circle(r = pcb_corner_r + pcb_clear);
+        translate([-pcb_clear, pcb_corner_r])
+            square([pcb_size.x + 2 * pcb_clear, open_back - pcb_corner_r]);
+    }
+}
+
+// Clearance pockets in the floor under the PCB, kept clear of the peg holes.
+module floor_pockets() {
+    difference() {
+        union() {
+            for (b = buttons)
+                translate([b.x, b.y, floor_t - pocket_d]) cylinder(d = b[2], h = pocket_d + over);
+            for (p = pockets)
+                translate([p[0].x, p[0].y, floor_t - p[2]])
+                    cube([p[1].x - p[0].x, p[1].y - p[0].y, p[2] + over]);
+        }
+        for (h = peg_holes) translate(h) cylinder(d = peg_boss_d, h = floor_t + over);
+    }
+}
+
+// Bore for a peg, with a 45 degree countersink in the bottom face for its barb.
+module peg_hole() {
+    translate([0, 0, -over]) {
+        cylinder(d = peg_hole_d, h = floor_t + 2 * over);
+        cylinder(d1 = csink_d + 2 * over, d2 = peg_hole_d, h = csink_h + over);
+    }
+}
+
+// ---- Plate
+
+module plate() {
+    linear_extrude(plate_t) difference() {
+        translate(plate_min) square(plate_max - plate_min);
+        for (k = switches) translate([k.x, k.y]) square(switch_hole, center = true);
+        for (h = peg_holes) translate(h) circle(d = peg_hole_d);
+        for (x = [notch[0].x, notch[1].x - plate_slot_w])
+            translate([x, notch[0].y]) square([plate_slot_w, notch[1].y - notch[0].y]);
+    }
+}
+
+// ---- Peg
+
+// Push-pin peg, flange down as printed. It goes in flange up: the tip passes
+// through the plate and floor, then the slit halves spring open into the
+// countersink.
+module peg() {
+    difference() {
+        union() {
+            cylinder(d = peg_flange_d, h = peg_flange_t);
+            intersection() {
+                peg_body();
+                peg_flats();
+            }
+        }
+        peg_slit();
+    }
+}
+
+// Round shaft with the barb at the tip.
+module peg_body() {
+    z = peg_len - barb_len;
+    rotate_extrude() polygon([
+        [0, 0], [peg_d / 2, 0], [peg_d / 2, z],
+        [peg_barb_d / 2, z + barb_flank], [peg_barb_d / 2, z + barb_flank + peg_barb_land],
+        [peg_d / 2, peg_len], [0, peg_len]
+    ]);
+}
+
+// What the two flats leave: a slab peg_flat_w wide, plus a 45 degree cone whose
+// radius is peg_flat_w / 2 at peg_split_z, so the flats run out into the round
+// shaft just below it.
+module peg_flats() {
+    translate([-peg_barb_d, -peg_flat_w / 2, -over])
+        cube([2 * peg_barb_d, peg_flat_w, peg_len + 2 * over]);
+    cylinder(r1 = peg_split_z + peg_flat_w / 2, r2 = 0, h = peg_split_z + peg_flat_w / 2);
+}
+
+// V slit that splits the tip into two halves: peg_slit_w wide at the tip,
+// narrowing by peg_slit_angle on each side down to peg_split_z.
+module peg_slit() {
+    h = peg_len + over - peg_split_z;  // from the root to just past the tip
+    w1 = slit_w(peg_len + over);
+    translate([0, 0, peg_split_z]) rotate([90, 0, 0])
+        linear_extrude(peg_barb_d + 2 * over, center = true)
+            polygon([[-slit_w0 / 2, 0], [slit_w0 / 2, 0], [w1 / 2, h], [-w1 / 2, h]]);
+}
+
+// ---- Assembly
+
+module plate_in_place() translate([0, 0, plate_z]) plate();
+
+// Pegs as installed: flange up on the rim plane, tip flush with the case bottom.
+module pegs_in_place() {
+    for (h = peg_holes) translate([h.x, h.y, peg_len]) rotate([180, 0, 0]) peg();
+}
+
+module assembly() {
+    color("#e8a33d") case();
+    color("#8a96a3") plate_in_place();
+    color("#4a4a4a") pegs_in_place();
+}
+
+// Overlap between parts. Must render empty; touching faces are fine.
+module interference() {
+    intersection() { case(); plate_in_place(); }
+    intersection() { case(); pegs_in_place(); }
+    intersection() { plate_in_place(); pegs_in_place(); }
+}
+
+if (part == "case") case();
+else if (part == "plate") plate();
+else if (part == "peg") peg();
+else if (part == "assembly") assembly();
+else if (part == "interference") interference();
+else assert(false, str("unknown part \"", part, "\""));
