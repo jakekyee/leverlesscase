@@ -1,10 +1,14 @@
-// ArtCase: case, switch plate and push-pin pegs for a leverless controller.
+// ArtCase: case, switch plate, top panel and push-pin pegs for a leverless controller.
 //
 // Rebuilt from ArtCase-case.step, ArtCase-plate.step and ArtCase-peg.step.
 // X and Y follow the STEP files: the origin is the PCB's front-left corner and
 // +Y runs toward the open back edge. Z = 0 is the bottom of the case.
 // The STEP parts have 0.4 mm cosmetic fillets on most edges. Those are left
 // out; every other dimension follows the STEP files.
+// The top panel isn't in the STEP files. It follows the top of the rect case
+// (granolasummitcase_rect.blend): round wells at the buttons and one opening
+// for the function row. It fills the space above the plate, so the peg
+// flanges clamp it down.
 // case_size sets the outer footprint. artcase_big.scad is the same case at
 // 297 x 210 mm (A4).
 //
@@ -12,13 +16,13 @@
 //   python ../openscad-stuff/scadloop.py scad/artcase.scad -D part=\"case\"
 //   python ../openscad-stuff/scadloop.py scad/artcase.scad -D part=\"interference\" --expect-empty
 //   python ../openscad-stuff/scadloop.py scad/artcase.scad -D part=\"assembly\" --preview
-// The plate and pegs fit line-to-line, as in the STEP files (plate_fit and
-// peg_fit are 0). The parts touch, so the merged assembly mesh has seams where
-// they meet and fails the watertight check; that is expected. The interference
-// check is the real fit test.
+// The plate, top panel and pegs fit line-to-line, as in the STEP files
+// (plate_fit and peg_fit are 0). The parts touch, so the merged assembly mesh
+// has seams where they meet and fails the watertight check; that is expected.
+// The interference check is the real fit test.
 
 /* [Selection] */
-part = "case";  // [case, plate, peg, assembly, interference]
+part = "case";  // [case, plate, top, peg, assembly, interference]
 
 /* [PCB] */
 pcb_size = [211, 125];  // footprint; the case and plate are flush with its back edge
@@ -31,6 +35,11 @@ plate_t = 2;
 switch_hole = 14;       // square switch cutout
 plate_slot_w = 3;       // width of the two slots above the ends of the floor notch
 plate_fit = 0;          // gap per side between plate and case (0 = as designed)
+
+/* [Top panel] */
+well_clear = 0;         // added per side to the wells and the function-row opening
+key_pitch = 18;         // function-row key spacing; the opening spans one cell per key
+min_web = 1.2;          // thinnest wall allowed between round holes in the panel
 
 /* [Case] */
 // Outer footprint [x, y]. The PCB stays centred left to right and flush with
@@ -61,15 +70,15 @@ $fn = $preview ? 32 : 96;
 over = 1;               // cutters run this far past the faces they open
 open_back = pcb_size.y + over;  // y for cuts that run out through the open back
 
-// Switch positions [x, y, d], where d is the diameter of the round floor pocket
-// under the switch.
+// Switch positions [x, y, d], where d is the button size: the diameter of the
+// round floor pocket under the switch and of its well in the top panel.
 buttons = [
     [ 12,  81,      24], [ 39,  89,      24], [ 66,  85,      24], [ 90,  68,      24],
     [104,  15,      30], [133,  32,      24],
     [118,  58,      24], [145,  67.9626, 24], [172,  67.9626, 24], [199,  59.9626, 24],
     [118,  85,      24], [145,  94.9626, 24], [172,  94.9626, 24], [199,  86.9626, 24]
 ];
-// Function-row switches; one rectangular floor pocket clears all four.
+// Function-row switches. One floor pocket and one top-panel opening serve all four.
 function_keys = [[12, 116], [30, 116], [48, 116], [66, 116]];
 peg_holes = [[9, 7], [202, 7], [83, 118], [128, 118]];
 
@@ -114,6 +123,14 @@ function slit_w(z) = peg_slit_w - 2 * (peg_len - z) * tan(peg_slit_angle);
 slit_w0 = slit_w(peg_split_z);                               // at the slit's root
 slit_w_barb = slit_w(peg_len - barb_flank - peg_barb_land);  // where the barb is widest
 
+// Round holes in the top panel [x, y, d]: a well per button and a hole per peg.
+panel_holes = concat([for (b = buttons) [b.x, b.y, b[2] + 2 * well_clear]],
+                     [for (h = peg_holes) [h.x, h.y, peg_hole_d]]);
+// Edge-to-edge distance between two round holes [x, y, d].
+function web(a, b) = norm([a.x - b.x, a.y - b.y]) - (a[2] + b[2]) / 2;
+panel_web = min([for (i = [0 : len(panel_holes) - 2]) for (j = [i + 1 : len(panel_holes) - 1])
+                 web(panel_holes[i], panel_holes[j])]);
+
 // ---- Design rules
 function inside(p, lo, hi) = p.x >= lo.x && p.y >= lo.y && p.x <= hi.x && p.y <= hi.y;
 
@@ -127,6 +144,7 @@ assert(csink_h < floor_t, "peg countersink is deeper than the floor");
 assert(slit_w0 >= 0, "peg slit closes up before reaching peg_split_z");
 assert(peg_split_z - (peg_d - peg_flat_w) / 2 >= peg_flange_t, "peg flats run into the flange");
 assert(slit_w_barb >= peg_barb_d - peg_hole_d, "peg barb can't squeeze through its hole");
+assert(panel_web >= min_web, str("top panel holes leave a web of only ", panel_web, " mm"));
 for (k = switches)
     assert(inside(k, plate_min + [1, 1] * switch_hole / 2, plate_max - [1, 1] * switch_hole / 2),
            str("switch at ", k, " is off the plate"));
@@ -141,6 +159,7 @@ echo(str("plate overhangs the PCB by ", -plate_min.x, " mm at each side and ",
          -plate_min.y, " mm at the front"));
 echo(str("peg ", peg_len, " mm long; countersink ", csink_d, " mm x ", csink_h,
          " deep; slit ", slit_w0, " to ", peg_slit_w, " mm"));
+echo(str("top panel ", rim_h, " mm thick; thinnest web between its holes ", panel_web, " mm"));
 
 // ---- Case
 
@@ -237,11 +256,26 @@ module plate() {
     }
 }
 
+// ---- Top panel
+
+// Sits on the plate inside the seat, flush with the rim.
+module top_panel() {
+    linear_extrude(rim_h) difference() {
+        translate(plate_min) square(plate_max - plate_min);
+        for (h = panel_holes) translate([h.x, h.y]) circle(d = h[2]);
+        // one opening over the function row: the key_pitch cell around each key, run out the back
+        offset(delta = well_clear) hull()
+            for (k = function_keys)
+                translate([k.x - key_pitch / 2, k.y - key_pitch / 2])
+                    square([key_pitch, open_back - (k.y - key_pitch / 2)]);
+    }
+}
+
 // ---- Peg
 
 // Push-pin peg, flange down as printed. It goes in flange up: the tip passes
-// through the plate and floor, then the slit halves spring open into the
-// countersink.
+// through the top panel, plate and floor, then the slit halves spring open
+// into the countersink.
 module peg() {
     difference() {
         union() {
@@ -287,8 +321,9 @@ module peg_slit() {
 // ---- Assembly
 
 module plate_in_place() translate([0, 0, plate_z]) plate();
+module top_in_place() translate([0, 0, plate_z + plate_t]) top_panel();
 
-// Pegs as installed: flange up on the rim plane, tip flush with the case bottom.
+// Pegs as installed: flange up on the top panel, tip flush with the case bottom.
 module pegs_in_place() {
     for (h = peg_holes) translate([h.x, h.y, peg_len]) rotate([180, 0, 0]) peg();
 }
@@ -296,18 +331,23 @@ module pegs_in_place() {
 module assembly() {
     color("#e8a33d") case();
     color("#8a96a3") plate_in_place();
+    color("#d9d2c3") top_in_place();
     color("#4a4a4a") pegs_in_place();
 }
 
 // Overlap between parts. Must render empty; touching faces are fine.
 module interference() {
     intersection() { case(); plate_in_place(); }
+    intersection() { case(); top_in_place(); }
     intersection() { case(); pegs_in_place(); }
+    intersection() { plate_in_place(); top_in_place(); }
     intersection() { plate_in_place(); pegs_in_place(); }
+    intersection() { top_in_place(); pegs_in_place(); }
 }
 
 if (part == "case") case();
 else if (part == "plate") plate();
+else if (part == "top") top_panel();
 else if (part == "peg") peg();
 else if (part == "assembly") assembly();
 else if (part == "interference") interference();
