@@ -5,6 +5,8 @@
 // +Y runs toward the open back edge. Z = 0 is the bottom of the case.
 // The STEP parts have 0.4 mm cosmetic fillets on most edges. Those are left
 // out; every other dimension follows the STEP files.
+// case_size sets the outer footprint. artcase_big.scad is the same case at
+// 297 x 210 mm (A4).
 //
 // Check from the repo root (see ../openscad-stuff/README.md):
 //   python ../openscad-stuff/scadloop.py scad/artcase.scad -D part=\"case\"
@@ -26,12 +28,14 @@ pcb_pocket_d = 1.8;     // pocket depth, from the floor up to the plate ledge
 
 /* [Plate] */
 plate_t = 2;
-plate_margin = 16.4;    // overhang past the PCB at the left, right and front
 switch_hole = 14;       // square switch cutout
 plate_slot_w = 3;       // width of the two slots above the ends of the floor notch
 plate_fit = 0;          // gap per side between plate and case (0 = as designed)
 
 /* [Case] */
+// Outer footprint [x, y]. The PCB stays centred left to right and flush with
+// the open back, so extra size goes to the left and right equally and to the front.
+case_size = [251.8, 145.4];
 wall = 4;               // wall thickness around the plate
 floor_t = 6;            // floor thickness under the PCB
 rim_h = 4.6;            // wall height above the plate
@@ -85,13 +89,14 @@ notch = [[195, 114.6], [211, open_back]];
 
 // ---- Derived dimensions
 switches = concat(buttons, function_keys);  // every switch cutout in the plate
-plate_min = [-plate_margin, -plate_margin];
-plate_max = [pcb_size.x + plate_margin, pcb_size.y];
-// Recess in the case that the plate sits in.
-seat_min = plate_min - [plate_fit, plate_fit];
-seat_max = [plate_max.x + plate_fit, pcb_size.y];
-case_min = seat_min - [wall, wall];
-case_max = [seat_max.x + wall, pcb_size.y];
+case_min = [(pcb_size.x - case_size.x) / 2, pcb_size.y - case_size.y];
+case_max = [(pcb_size.x + case_size.x) / 2, pcb_size.y];
+// Recess in the case that the plate sits in. The back is open, so neither the
+// wall nor the fit applies there.
+seat_min = case_min + [wall, wall];
+seat_max = case_max - [wall, 0];
+plate_min = seat_min + [plate_fit, plate_fit];
+plate_max = seat_max - [plate_fit, 0];
 plate_z = floor_t + pcb_pocket_d;  // the plate rests on the ledge here
 case_h = plate_z + plate_t + rim_h;
 
@@ -113,7 +118,8 @@ slit_w_barb = slit_w(peg_len - barb_flank - peg_barb_land);  // where the barb i
 function inside(p, lo, hi) = p.x >= lo.x && p.y >= lo.y && p.x <= hi.x && p.y <= hi.y;
 
 assert(outer_r > 0 && outer_r <= wall, "outer_r must fit within the wall");
-assert(plate_margin > pcb_clear, "the plate must overhang the PCB pocket to rest on the ledge");
+assert(plate_min.x < -pcb_clear && plate_min.y < -pcb_clear,
+       "case_size too small: the plate must overhang the PCB pocket to rest on the ledge");
 assert(plate_fit >= 0 && peg_fit >= 0, "fits are clearances and can't be negative");
 assert(floor_t - max([pocket_d, for (p = pockets) p[2]]) >= min_floor,
        "a floor pocket leaves less than min_floor");
@@ -131,6 +137,8 @@ for (b = buttons)
 
 echo(str("case ", case_max - case_min, " x ", case_h, " mm; plate ", plate_max - plate_min,
          " x ", plate_t, " mm at z=", plate_z, "; ", len(switches), " switches"));
+echo(str("plate overhangs the PCB by ", -plate_min.x, " mm at each side and ",
+         -plate_min.y, " mm at the front"));
 echo(str("peg ", peg_len, " mm long; countersink ", csink_d, " mm x ", csink_h,
          " deep; slit ", slit_w0, " to ", peg_slit_w, " mm"));
 
