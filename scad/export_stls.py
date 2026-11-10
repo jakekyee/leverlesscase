@@ -1,12 +1,11 @@
 #!/usr/bin/env python3
-"""Export printable STLs for every ArtCase variant.
+"""Export the parts of every ArtCase variant.
 
-Writes out/stl/<variant>/<part>.stl for each part a variant prints, in print
-orientation: the case (or its pieces case1, case2 ... when it is split), plate,
-top panel, peg and, for a split case, the bowtie key. Each .scad file echoes
-its part list with the number of copies to print; this script reads that list
-and prints each file with its copy count. Runs from any folder; paths are
-relative to the repo.
+Writes printed parts as STL in print orientation to out/stl/<variant>/, and
+laser-cut parts (plate_2d, top_2d) as DXF and SVG to out/laser/<variant>/. Each
+.scad file echoes its part list, with how many of each to make, and the
+hardware to buy; this script reads both and prints them. Runs from any folder;
+paths are relative to the repo.
 
     python scad/export_stls.py                                   # as designed
     python scad/export_stls.py -D plate_fit=0.2 -D peg_fit=0.2   # with FDM clearance
@@ -25,7 +24,8 @@ import sys
 import tempfile
 from pathlib import Path
 
-VARIANTS = ["artcase", "artcase_big"]  # scad/<variant>.scad
+# scad/<variant>.scad
+VARIANTS = ["artcase", "artcase_art", "artcase_big_acrylic", "artcase_big_allprinted"]
 OPENSCAD_CANDIDATES = [
     os.environ.get("OPENSCAD", ""),
     r"C:\Program Files\OpenSCAD (Nightly)\openscad.com",
@@ -49,16 +49,17 @@ def d_args(defines: list[str]) -> list[str]:
     return [arg for define in defines for arg in ("-D", define)]
 
 
-def part_list(exe: str, scad: Path, defines: list[str]) -> list:
-    """The [[part, copies], ...] list the .scad file echoes as `printable`; [] on failure."""
+def echoes(exe: str, scad: Path, defines: list[str]) -> dict:
+    """The `printable` and `hardware` lists the .scad file echoes; {} on failure."""
     with tempfile.TemporaryDirectory() as tmp:
         echo = Path(tmp) / "parts.echo"
         # no -q here: quiet mode also leaves the .echo file empty
         cmd = [exe, str(scad), "-o", str(echo), "--hardwarnings", *d_args(defines)]
         if subprocess.run(cmd).returncode != 0 or not echo.exists():
-            return []
-        found = re.search(r"^ECHO: printable = (.*)$", echo.read_text(), re.M)
-    return json.loads(found.group(1)) if found else []
+            return {}
+        text = echo.read_text()
+    found = re.findall(r"^ECHO: (printable|hardware) = (.*)$", text, re.M)
+    return {name: json.loads(value) for name, value in found}
 
 
 def main() -> int:
@@ -72,22 +73,29 @@ def main() -> int:
     exe = find_openscad()
     for variant in VARIANTS:
         scad = repo / "scad" / f"{variant}.scad"
-        parts = part_list(exe, scad, args.defines)
-        if not parts:
+        info = echoes(exe, scad, args.defines)
+        if not info.get("printable"):
             print(f"export failed: {variant} (no part list)", file=sys.stderr)
             return 1
-        outdir = repo / "out" / "stl" / variant
-        outdir.mkdir(parents=True, exist_ok=True)
-        for old in outdir.glob("*.stl"):  # a failed or dropped part must not leave an old file behind
-            old.unlink()
-        for part, copies in parts:
-            stl = outdir / f"{part}.stl"
-            cmd = [exe, str(scad), "-o", str(stl), "--export-format", "binstl", "--hardwarnings", "-q",
-                   "-D", f'part="{part}"', *d_args(args.defines)]
-            if subprocess.run(cmd).returncode != 0:
-                print(f"export failed: {variant} {part}", file=sys.stderr)
-                return 1
-            print(f"{stl.relative_to(repo).as_posix()}  x{copies}")
+        dirs = {"stl": repo / "out" / "stl" / variant, "laser": repo / "out" / "laser" / variant}
+        for d in dirs.values():
+            d.mkdir(parents=True, exist_ok=True)
+            for old in d.iterdir():  # a failed or dropped part must not leave an old file behind
+                if old.suffix in (".stl", ".dxf", ".svg"):
+                    old.unlink()
+        for part, copies in info["printable"]:
+            laser = part.endswith("_2d")
+            for fmt in (["dxf", "svg"] if laser else ["stl"]):
+                out = dirs["laser" if laser else "stl"] / f"{part}.{fmt}"
+                cmd = [exe, str(scad), "-o", str(out)]
+                cmd += ["--export-format", "binstl"] if fmt == "stl" else []
+                cmd += ["--hardwarnings", "-q", "-D", f'part="{part}"', *d_args(args.defines)]
+                if subprocess.run(cmd).returncode != 0:
+                    print(f"export failed: {variant} {part}", file=sys.stderr)
+                    return 1
+                print(f"{out.relative_to(repo).as_posix()}  x{copies}{'  (laser cut)' if laser else ''}")
+        if info.get("hardware"):
+            print("  buy: " + ", ".join(f"{n} x {name}" for name, n in info["hardware"]))
     return 0
 
 
