@@ -17,8 +17,10 @@
 //                        plate's top face stays put, so the switches still fit
 //   case_size, plate_w   a bigger footprint, and a plate and top narrower than it
 //   case_cuts            the case in pieces joined by bowtie keys underneath
-//   bed_size             fail if a printed part doesn't fit the printer
-// The variant files (artcase_art.scad, artcase_big_*.scad) set these.
+//   case_on_edge         the case printed standing on its front edge, turned 45
+//                        degrees on the bed, so a case too long to lie flat fits
+//   bed_size, bed_h      fail if a printed part doesn't fit the printer
+// The variant files (artcase_*.scad) set these.
 //
 // Check from the repo root (see ../openscad-stuff/README.md):
 //   python ../openscad-stuff/scadloop.py scad/artcase.scad -D part=\"case\"
@@ -111,6 +113,11 @@ peg_slit_angle = 7;     // angle of each slit wall from vertical, degrees
 
 /* [Printing] */
 bed_size = [0, 0];      // printer bed [x, y]; every printed part must fit on it. [0, 0] skips the check
+bed_h = 0;              // printer build height, checked for a case printed on edge; 0 skips the check
+// Print the case standing on its front edge, turned 45 degrees on the bed, so a
+// case too long to lie flat still prints in one piece. The case (or each case
+// piece) is exported that way, ready to slice.
+case_on_edge = false;
 
 /* [Hidden] */
 $fn = $preview ? 32 : 96;
@@ -239,6 +246,9 @@ function pocket_over(lo, hi) = max(concat([0],
 function bowtie_lo(k) = k - [bowtie_len, bowtie_w] / 2;
 function bowtie_hi(k) = k + [bowtie_len, bowtie_w] / 2;
 function fits_bed(size) = bed_size == [0, 0] || (max(size) <= max(bed_size) && min(size) <= min(bed_size));
+// Footprint of case piece i on the bed: lying flat, or on edge and turned 45 degrees.
+function piece_footprint(i) = let(w = piece_x[i] - piece_x[i - 1])
+    case_on_edge ? [1, 1] * (w + case_h) / sqrt(2) : [w, case_size.y];
 function is_pcb_hole(p) = len([for (h = peg_holes) if (h == p) 1]) > 0;
 
 assert(outer_r > 0 && outer_r <= wall, "outer_r must fit within the wall");
@@ -307,7 +317,8 @@ for (k = bowties) {
         assert(box_dist(p, lo, hi) > fastener_keepout, str("bowtie at ", k, " runs into the fastener at ", p));
 }
 for (i = [1 : n_pieces])
-    assert(fits_bed([piece_x[i] - piece_x[i - 1], case_size.y]), str("case piece ", i, " doesn't fit bed_size"));
+    assert(fits_bed(piece_footprint(i)), str("case piece ", i, " doesn't fit bed_size"));
+assert(!case_on_edge || bed_h == 0 || case_size.y <= bed_h, "the case printed on edge is taller than bed_h");
 assert(laser_plate || fits_bed(plate_max - plate_min), "the plate doesn't fit bed_size: narrow it or cut it");
 assert(laser_top || fits_bed(top_max - top_min), "the top panel doesn't fit bed_size: narrow it or cut it");
 
@@ -326,6 +337,10 @@ if (n_pieces > 1)
     echo(str("case cut at x=", case_cuts, " into pieces ",
              [for (i = [1 : n_pieces]) piece_x[i] - piece_x[i - 1]], " mm wide, with ",
              len(bowties), " bowties"));
+if (case_on_edge)
+    echo(str("case printed on its front edge, turned 45 degrees: within ",
+             n_pieces == 1 ? piece_footprint(1) : [for (i = [1 : n_pieces]) piece_footprint(i)],
+             " mm on the bed, ", case_size.y, " mm tall"));
 echo(printable = printable);
 echo(hardware = hardware);
 
@@ -360,6 +375,16 @@ module case_piece(i) {
         translate([x0, case_min.y - over, -over])
             cube([x1 - x0, case_size.y + 2 * over, case_h + 2 * over]);
     }
+}
+
+// The case or a case piece as printed: lying flat as modelled or, with
+// case_on_edge, standing on its front face and turned 45 degrees about the
+// case's middle.
+module case_print() {
+    if (case_on_edge)
+        rotate([0, 0, 45]) translate([-pcb_size.x / 2, case_h / 2, 0])
+            rotate([90, 0, 0]) translate([0, -case_min.y, 0]) children();
+    else children();
 }
 
 // Outer shell: the hull of two domed front-corner posts and two side rails.
@@ -607,8 +632,8 @@ module interference() {
 
 case_part = [for (i = [1 : n_pieces]) if (part == str("case", i)) i];  // [i] when part names a piece
 
-if (part == "case") case();
-else if (len(case_part) > 0) case_piece(case_part[0]);
+if (part == "case") case_print() case();
+else if (len(case_part) > 0) case_print() case_piece(case_part[0]);
 else if (part == "plate") plate();
 else if (part == "plate_2d") plate_2d();
 else if (part == "top") top_panel();

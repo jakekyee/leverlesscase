@@ -25,7 +25,9 @@ import tempfile
 from pathlib import Path
 
 # scad/<variant>.scad
-VARIANTS = ["artcase", "artcase_art", "artcase_big_acrylic", "artcase_big_allprinted"]
+VARIANTS = ["artcase", "artcase_art", "artcase_big_acrylic", "artcase_big_allprinted",
+            "artcase_screws", "artcase_deep_acrylic", "artcase_big_acrylic_onepiece",
+            "artcase_big_allprinted_onepiece"]
 OPENSCAD_CANDIDATES = [
     os.environ.get("OPENSCAD", ""),
     r"C:\Program Files\OpenSCAD (Nightly)\openscad.com",
