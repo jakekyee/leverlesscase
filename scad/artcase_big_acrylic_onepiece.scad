@@ -28,9 +28,10 @@ laser_top = true;
 rim_h = 4.6;                        // 4.5 mm acrylic + 0.1 mm paper print; set it to what you buy
 top_fit = 0.2;                      // gap per side around the acrylic in the printed seat
 fastener = "screw";
-// The same seven screws as artcase_big_acrylic.scad. The two at the back are
-// there to put inserts in its middle piece; with the case in one piece they
-// could go.
+// The same ten screws as artcase_big_acrylic.scad, so the same acrylic fits
+// both. The back pair hold the top's back edge beside the function-row opening
+// and the plate beside the USB connector; the front pair mirror them.
 screws = [[-30, -72], [241, -72], [-30, 116], [241, 116],  // corners, about 9 mm in from the edges
-          [105.5, -40],                                     // front centre
+          [-30, 22], [241, 22],                            // sides, halfway between the corners
+          [83, -72], [128, -72],                           // front, in line with the back pair
           [83, 118], [128, 118]];                           // back, through the PCB's mounting holes

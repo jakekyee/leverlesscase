@@ -3,7 +3,7 @@
 // full-size piece (289 x 206 mm) that bridges both case cuts, and together they
 // stack to the same height as the printed plate and top. Everything else comes
 // from artcase.scad. The case prints in three pieces on a Bambu P1S, joined by
-// bowtie keys set into its underside, and seven M3 countersunk screws go
+// bowtie keys set into its underside, and ten M3 countersunk screws go
 // through the top and plate into heat-set inserts in every piece. Cut plate_2d
 // and top_2d (DXF or SVG), trim the art print to top_2d, and countersink the
 // top's screw holes by hand (90 degrees, 6 mm across), since a laser can't.
@@ -29,5 +29,6 @@ rim_h = 4.6;                        // 4.5 mm acrylic + 0.1 mm paper print; set 
 top_fit = 0.2;                      // gap per side around the acrylic in the printed seat
 fastener = "screw";
 screws = [[-30, -72], [241, -72], [-30, 116], [241, 116],  // corners, about 9 mm in from the edges
-          [105.5, -40],                                     // front centre
+          [-30, 22], [241, 22],                            // sides, halfway between the corners
+          [83, -72], [128, -72],                           // front, in line with the back pair
           [83, 118], [128, 118]];                           // back, through the PCB's mounting holes

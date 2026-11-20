@@ -19,6 +19,8 @@
 //   case_cuts            the case in pieces joined by bowtie keys underneath
 //   case_on_edge         the case printed standing on its front edge, turned 45
 //                        degrees on the bed, so a case too long to lie flat fits
+//   plate/top_on_edge    the plate or top printed the same way, so one too wide
+//                        to lie flat still prints in one piece
 //   bed_size, bed_h      fail if a printed part doesn't fit the printer
 // The variant files (artcase_*.scad) set these.
 //
@@ -113,11 +115,15 @@ peg_slit_angle = 7;     // angle of each slit wall from vertical, degrees
 
 /* [Printing] */
 bed_size = [0, 0];      // printer bed [x, y]; every printed part must fit on it. [0, 0] skips the check
-bed_h = 0;              // printer build height, checked for a case printed on edge; 0 skips the check
+bed_h = 0;              // printer build height, checked for parts printed on edge; 0 skips the check
 // Print the case standing on its front edge, turned 45 degrees on the bed, so a
 // case too long to lie flat still prints in one piece. The case (or each case
 // piece) is exported that way, ready to slice.
 case_on_edge = false;
+// Print the plate or top panel the same way, so one too wide to lie flat (a
+// full-width plate or top on a big case) still prints in one piece.
+plate_on_edge = false;
+top_on_edge = false;
 
 /* [Hidden] */
 $fn = $preview ? 32 : 96;
@@ -249,6 +255,8 @@ function fits_bed(size) = bed_size == [0, 0] || (max(size) <= max(bed_size) && m
 // Footprint of case piece i on the bed: lying flat, or on edge and turned 45 degrees.
 function piece_footprint(i) = let(w = piece_x[i] - piece_x[i - 1])
     case_on_edge ? [1, 1] * (w + case_h) / sqrt(2) : [w, case_size.y];
+// The same for a plate or top panel spanning lo..hi in plan, t thick.
+function panel_footprint(on_edge, lo, hi, t) = on_edge ? [1, 1] * (hi.x - lo.x + t) / sqrt(2) : hi - lo;
 function is_pcb_hole(p) = len([for (h = peg_holes) if (h == p) 1]) > 0;
 
 assert(outer_r > 0 && outer_r <= wall, "outer_r must fit within the wall");
@@ -319,8 +327,14 @@ for (k = bowties) {
 for (i = [1 : n_pieces])
     assert(fits_bed(piece_footprint(i)), str("case piece ", i, " doesn't fit bed_size"));
 assert(!case_on_edge || bed_h == 0 || case_size.y <= bed_h, "the case printed on edge is taller than bed_h");
-assert(laser_plate || fits_bed(plate_max - plate_min), "the plate doesn't fit bed_size: narrow it or cut it");
-assert(laser_top || fits_bed(top_max - top_min), "the top panel doesn't fit bed_size: narrow it or cut it");
+assert(laser_plate || fits_bed(panel_footprint(plate_on_edge, plate_min, plate_max, plate_t)),
+       "the plate doesn't fit bed_size: narrow it, stand it on edge or cut it");
+assert(laser_top || fits_bed(panel_footprint(top_on_edge, top_min, top_max, rim_h)),
+       "the top panel doesn't fit bed_size: narrow it, stand it on edge or cut it");
+assert(laser_plate || !plate_on_edge || bed_h == 0 || plate_max.y - plate_min.y <= bed_h,
+       "the plate printed on edge is taller than bed_h");
+assert(laser_top || !top_on_edge || bed_h == 0 || top_max.y - top_min.y <= bed_h,
+       "the top panel printed on edge is taller than bed_h");
 
 echo(str("case ", case_max - case_min, " x ", case_h, " mm; plate ", plate_max - plate_min, " x ", plate_t,
          " mm at z=", plate_z, "; top ", top_max - top_min, " x ", rim_h, " mm; ", len(switches), " switches"));
@@ -341,6 +355,14 @@ if (case_on_edge)
     echo(str("case printed on its front edge, turned 45 degrees: within ",
              n_pieces == 1 ? piece_footprint(1) : [for (i = [1 : n_pieces]) piece_footprint(i)],
              " mm on the bed, ", case_size.y, " mm tall"));
+if (plate_on_edge && !laser_plate)
+    echo(str("plate printed on its front edge, turned 45 degrees: within ",
+             panel_footprint(true, plate_min, plate_max, plate_t), " mm on the bed, ",
+             plate_max.y - plate_min.y, " mm tall"));
+if (top_on_edge && !laser_top)
+    echo(str("top panel printed on its front edge, turned 45 degrees: within ",
+             panel_footprint(true, top_min, top_max, rim_h), " mm on the bed, ",
+             top_max.y - top_min.y, " mm tall"));
 echo(printable = printable);
 echo(hardware = hardware);
 
@@ -384,6 +406,16 @@ module case_print() {
     if (case_on_edge)
         rotate([0, 0, 45]) translate([-pcb_size.x / 2, case_h / 2, 0])
             rotate([90, 0, 0]) translate([0, -case_min.y, 0]) children();
+    else children();
+}
+
+// A plate or top panel spanning lo..hi in plan, t thick, as printed: lying flat
+// as modelled or, on_edge, standing on its front edge and turned 45 degrees
+// about its middle, like the case.
+module panel_print(on_edge, lo, hi, t) {
+    if (on_edge)
+        rotate([0, 0, 45]) translate([-(lo.x + hi.x) / 2, t / 2, 0])
+            rotate([90, 0, 0]) translate([0, -lo.y, 0]) children();
     else children();
 }
 
@@ -634,9 +666,9 @@ case_part = [for (i = [1 : n_pieces]) if (part == str("case", i)) i];  // [i] wh
 
 if (part == "case") case_print() case();
 else if (len(case_part) > 0) case_print() case_piece(case_part[0]);
-else if (part == "plate") plate();
+else if (part == "plate") panel_print(plate_on_edge, plate_min, plate_max, plate_t) plate();
 else if (part == "plate_2d") plate_2d();
-else if (part == "top") top_panel();
+else if (part == "top") panel_print(top_on_edge, top_min, top_max, rim_h) top_panel();
 else if (part == "top_2d") top_2d();
 else if (part == "peg") peg();
 else if (part == "bowtie") bowtie();
